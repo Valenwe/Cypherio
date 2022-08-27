@@ -3,46 +3,35 @@ import subprocess
 
 # pip install pycryptodomex
 
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Random import get_random_bytes
-from Cryptodome.Cipher import AES, PKCS1_OAEP
 import os
 import sys
+import crypto
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP, AES
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import unpad
 
 
-def generate_key(key_name):
-    key = RSA.generate(4096)
-    f = open("output/keys/" + key_name + ".pem", "wb")
-    f.write(key.export_key("PEM"))
+def generate_key(key_name, bits=2048):
+    priv, _ = crypto.generate_RSA_key(bits)
+    f = open("output/keys/" + key_name + ".pem", "w")
+    f.write(priv)
     f.close()
 
 
 def generate_public_key(key_name):
     try:
-        private_key = RSA.import_key(open(key_name).read())
-    except IOError:
+        priv_str = open(key_name).read()
+        pub_str = crypto.generate_RSA_public_key(priv_str)
+    except:
         return None
 
     f = open("output/keys/" + key_name.split("/")
-             [-1].replace(".pem", "") + "_public.pem", "wb")
-    f.write(private_key.public_key().export_key("PEM"))
+             [-1].replace(".pem", "") + "_public.pem", "w")
+    f.write(pub_str)
     f.close()
 
     return key_name
-
-
-def get_file_name(file_name_ext):
-    i = len(file_name_ext) - 1
-    while (i > 0):
-        if file_name_ext[i] == ".":
-            break
-        i -= 1
-
-    file_name = ""
-    for I in range(0, i):
-        file_name += file_name_ext[I]
-
-    return file_name
 
 
 def confirm_file_exists(file_path):
@@ -50,7 +39,7 @@ def confirm_file_exists(file_path):
     if os.path.isfile(file_path):
         filename = os.path.basename(file_path)
         layout = [
-            [sg.Text("File "" + filename + "" already exists")],
+            [sg.Text("File " + filename + " already exists")],
             [sg.Text("Do you want to overwrite it?")],
             [sg.Button("Continue", enable_events=True),
              sg.Button("Cancel", enable_events=True)]
@@ -73,46 +62,30 @@ def confirm_file_exists(file_path):
 
 def check_key_validation(key_name, public=True):
     response = True
-    try:
-        key = RSA.import_key(
-            open(key_name).read())
-        rsa_object = PKCS1_OAEP.new(key)
-    except IOError:
-        print("Error reading the RSA key!")
-        sg.popup(
-            "Error", "Error reading the RSA key!")
-        return False
+    key_str = open(key_name).read()
 
     if not public:
-        try:
-            if not rsa_object.can_decrypt():
-                response = False
-        except:
-            response = False
+        response = crypto.is_private(key_str)
+    else:
+        response = crypto.is_public(key_str)
 
-    elif public:
-        try:
-            if not rsa_object.can_encrypt():
-                response = False
-        except:
-            response = False
-
-    if not public and not response:
-        sg.popup(
-            "Error", "You have to select a private key to decrypt files!")
-        print("The RSA key is not a private key!")
-    elif public and not response:
-        sg.popup(
-            "Error", "You have to select a public or private key to encrypt files!")
-        print("The RSA key is not a public or private key!")
+    if not response:
+        if not public:
+            sg.popup(
+                "Error", "You have to select a private key to decrypt files!")
+            print("The RSA key is not a private key!")
+        else:
+            sg.popup(
+                "Error", "You have to select a public or private key to encrypt files!")
+            print("The RSA key is not a public or private key!")
 
     return response
 
 
-def encrypt(path, key_name, data_file_name, path_out):
+def encrypt(filepath, key_name, path_out):
     try:
         # "rb" lit le fichier en .bytes, nécessaire pour conversion
-        data_file = open(path + "/" + data_file_name, "rb")
+        data_file = open(filepath, "rb")
         data = data_file.read()
         data_file.close()
 
@@ -120,75 +93,52 @@ def encrypt(path, key_name, data_file_name, path_out):
         print("Error reading the data file!")
         return None
 
-    # on retire l"extension
-    bin_file_name = get_file_name(data_file_name)
-    path_file_out = path_out + "/" + bin_file_name + ".bin"
-    file_out = open(path_file_out, "wb")
-
     try:
-        recipient_key = RSA.import_key(
-            open(key_name).read())
+        key_str = open(key_name).read()
     except IOError:
+        print("Error reading the RSA key!")
         return None
+
+    basename = os.path.splitext(os.path.basename(filepath))
+    bin_file_name = basename[0] + "_encrypted" + basename[1]
+    path_file_out = path_out + "/" + bin_file_name
 
     if not confirm_file_exists(path_file_out):
         return None
 
-    session_key = get_random_bytes(16)
-
-    # Encrypt the session key with the public RSA key
-    cipher_rsa = PKCS1_OAEP.new(recipient_key)
-    enc_session_key = cipher_rsa.encrypt(session_key)
-
-    # Encrypt the data with the AES session key
-    cipher_aes = AES.new(session_key, AES.MODE_EAX)
-    ciphertext, tag = cipher_aes.encrypt_and_digest(data)
+    file_out = open(path_file_out, "wb")
     [file_out.write(x)
-     for x in (enc_session_key, cipher_aes.nonce, tag, ciphertext)]
+     for x in crypto.encrypt_AES_RSA(key_str, data)]
     file_out.close()
 
     return bin_file_name
 
 
-def decrypt(path, key_name, bin_file_name, path_out):
+def decrypt(filepath, key_name, path_out):
     try:
-        file_in = open(path + "/" + bin_file_name + ".bin", "rb")
+        key_str = open(key_name).read()
+    except IOError:
+        print("Error reading the RSA key!")
+        return None
 
-        try:
-            private_key = RSA.import_key(
-                open(key_name).read())
-        except IOError:
-            print("Error reading the RSA key!")
-            return None
-
-        enc_session_key, nonce, tag, ciphertext = \
-            [file_in.read(x)
-             for x in (private_key.size_in_bytes(), 16, 16, -1)]
-
-        file_in.close()
-
+    try:
+        file = open(filepath, "rb")
+        enc_data = file.read()
+        file.close()
     except IOError:
         print("Error reading the binary file!")
         return None
 
-    decrypted_file_path = path_out + "/" + bin_file_name + "_decrypted.bin"
+    basename = os.path.splitext(os.path.basename(filepath))
+    bin_file_name = basename[0] + "_decrypted" + basename[1]
+    decrypted_file_path = path_out + "/" + bin_file_name
+
     if not confirm_file_exists(decrypted_file_path):
         return None
 
-    # Decrypt the session key with the private RSA key
-    cipher_rsa = PKCS1_OAEP.new(private_key)
-    try:
-        session_key = cipher_rsa.decrypt(enc_session_key)
-    except TypeError:
-        print("The RSA key is not a private key!")
-        return -1
+    data = crypto.decrypt_AES_RSA(key_str, enc_data)
 
-    # Decrypt the data with the AES session key
-    cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
-    data = cipher_aes.decrypt_and_verify(ciphertext, tag)
-
-    # print(data.decode("utf-8"))
-    file = open(decrypted_file_path, "wb")
+    file = open(decrypted_file_path, "w")
     file.write(data)
     file.close()
 
@@ -215,7 +165,8 @@ def result_window(name, header, content, folder):
         if event in (sg.WIN_CLOSED, "Continue"):
             break
         elif event == "View folder":
-            subprocess.Popen(r"explorer '%s'" % folder)
+            subprocess.call('start %windir%/explorer.exe "' +
+                            r"%s" % folder + '"', shell=True)
 
     window.close()
 
@@ -225,6 +176,8 @@ def private_key_generation():
     layout = [
         [sg.Text("Please enter the private key name: "),
          sg.Input(key="_NAME_")],
+        [sg.Text("Bit size: "), sg.OptionMenu(
+            values=["2048", "4096"], default_value="2048", key='_BITS_')],
         [sg.Button("Generate", enable_events=True),
          sg.Button("Cancel", enable_events=True)]
     ]
@@ -241,7 +194,7 @@ def private_key_generation():
             elif check_name_presence(values["_NAME_"] + ".pem", "keys"):
                 sg.popup("There is already a file with that name!")
             else:
-                generate_key(values["_NAME_"])
+                generate_key(values["_NAME_"], int(values["_BITS_"]))
                 sg.popup("Successfully generated at " + os.getcwd() +
                          "\output\keys\\" + values["_NAME_"] + ".pem")
                 break
@@ -285,7 +238,7 @@ def public_key_generation():
 
 def guide_window():
     layout = [
-        [sg.Text("How to use this program\nThis program is using standard RSA encryption, with asymmetrical keys\n\nA private key allows you to cypher and decypher any file, a public key can only cypher files\nYou can only decypher .bin files")],
+        [sg.Text("How to use this program\nThis program is using standard RSA encryption, with asymmetrical keys\n\nA private key allows you to cypher and decypher any file, a public key can only cypher files\nYou can only decypher binary files")],
         [sg.OK()]
     ]
 
@@ -320,11 +273,11 @@ menu_def = [["&Key generation", ["&Generate private key", "&Generate public key"
 layout = [
     [sg.Menu(menu_def, tearoff=False, pad=(200, 1))],
     [sg.Text("Key"), sg.Input(key="_KEY_", size=(100, 5), disabled=True),
-     sg.FileBrowse("Add", file_types=(("Key", "*.pem"),), tooltip="Select a key")],
+     sg.FileBrowse("Select", file_types=(("Key", "*.pem"),), tooltip="Select a key")],
     [sg.Listbox(values=target_files, enable_events=True, size=(
         100, 20), select_mode=sg.LISTBOX_SELECT_MODE_EXTENDED, key="_FILES_")],
     [sg.FilesBrowse("Add files", key="_BR_", enable_events=True, file_types=(
-        ("All files", "*.*"), ("Binary files", "*.bin"),), tooltip="Add files to selection")],
+        ("All files", "*.*"),), tooltip="Add files to selection")],
     [sg.Button("Remove", enable_events=True, tooltip="Remove file selection")],
     [sg.Button("Encrypt", enable_events=True, tooltip="Encrypt file selection"),
      sg.Button("Decrypt", enable_events=True, tooltip="Decrypt file selection")]
@@ -381,17 +334,18 @@ while True:
             if check_key_validation(values["_KEY_"]):
                 results = []
                 for element in target_files:
-                    if encrypt(element.replace(
-                            "/" + element.split("/")[-1], ""), values["_KEY_"], element.split("/")[-1], "output/encrypted") == None:
+                    if encrypt(element, values["_KEY_"], "output/encrypted") == None:
                         results.append("failed")
                     else:
                         results.append("success")
 
                 popup = ""
                 for i in range(0, len(results)):
-                    popup += target_files[i].split("/")[-1] + \
-                        " => " + target_files[i].split("/")[-1].replace(
-                            "." + target_files[i].split(".")[-1], "") + ".bin ~~ " + results[i] + "\n"
+                    file_ext = os.path.splitext(
+                        os.path.basename(target_files[i]))
+                    popup += file_ext[0] + \
+                        " => " + file_ext[0] + "_encrypted" + file_ext[1] + \
+                        " ~~ " + results[i] + "\n"
                 result_window("Encryption", "File encryption report",
                               popup, os.getcwd() + "\output\encrypted")
                 target_files = []
@@ -403,26 +357,22 @@ while True:
         elif values["_KEY_"] == "":
             sg.popup("You have to select a private key!")
         else:
-            bin = True
-            for element in target_files:
-                if not element.endswith(".bin"):
-                    sg.popup("You have to select .bin files only!")
-                    bin = False
 
-            if bin and check_key_validation(values["_KEY_"], public=False):
+            if check_key_validation(values["_KEY_"], public=False):
                 results = []
                 for element in target_files:
-                    if decrypt(element.replace("/" + element.split("/")[-1], ""), values["_KEY_"], element.split(
-                            "/")[-1].replace(".bin", ""), "output/decrypted") == None:
+                    if decrypt(element, values["_KEY_"], "output/decrypted") == None:
                         results.append("failed")
                     else:
                         results.append("success")
 
                 popup = ""
                 for i in range(0, len(results)):
-                    popup += target_files[i].split("/")[-1] + \
-                        " => " + target_files[i].split("/")[-1].replace(
-                            ".bin", "") + "_decrypted.bin ~~ " + results[i] + "\n"
+                    file_ext = os.path.splitext(
+                        os.path.basename(target_files[i]))
+                    popup += file_ext[0] + \
+                        " => " + file_ext[0] + "_decrypted" + file_ext[1] + \
+                        " ~~ " + results[i] + "\n"
 
                 result_window("Decryption", "File decryption report",
                               popup, os.getcwd() + "\output\decrypted")
