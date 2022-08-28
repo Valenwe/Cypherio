@@ -1,15 +1,9 @@
 import PySimpleGUI as sg
 import subprocess
 
-# pip install pycryptodomex
-
 import os
 import sys
 import crypto
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_OAEP, AES
-from Crypto.Random import get_random_bytes
-from Crypto.Util.Padding import unpad
 
 
 def generate_key(key_name, bits=2048):
@@ -45,7 +39,7 @@ def confirm_file_exists(file_path):
              sg.Button("Cancel", enable_events=True)]
         ]
 
-        window = sg.Window("Overwrite?", layout)
+        window = sg.Window("Overwrite?", layout, icon="favicon.ico")
 
         while True:
             event, values = window.read()
@@ -158,7 +152,7 @@ def result_window(name, header, content, folder):
          sg.Button("View folder", enable_events=True)]
     ]
 
-    window = sg.Window(name, layout)
+    window = sg.Window(name, layout, icon="favicon.ico")
 
     while True:
         event, values = window.read()
@@ -182,7 +176,7 @@ def private_key_generation():
          sg.Button("Cancel", enable_events=True)]
     ]
 
-    window = sg.Window("Private key generation", layout)
+    window = sg.Window("Private key generation", layout, icon="favicon.ico")
 
     while True:
         event, values = window.read()
@@ -211,7 +205,7 @@ def public_key_generation():
          sg.Button("Cancel", enable_events=True)]
     ]
 
-    window = sg.Window("Public key generation", layout)
+    window = sg.Window("Public key generation", layout, icon="favicon.ico")
 
     while True:
         event, values = window.read()
@@ -242,7 +236,7 @@ def guide_window():
         [sg.OK()]
     ]
 
-    window = sg.Window("Guide", layout)
+    window = sg.Window("Guide", layout, icon="favicon.ico")
     event, values = window.read()
     window.close()
 
@@ -283,7 +277,7 @@ layout = [
      sg.Button("Decrypt", enable_events=True, tooltip="Decrypt file selection")]
 ]
 
-window = sg.Window("Cypherio", layout)
+window = sg.Window("Cypherio", layout, icon="favicon.ico")
 
 while True:
     event, values = window.read()

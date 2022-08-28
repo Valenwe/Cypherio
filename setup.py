@@ -8,5 +8,5 @@ executables = [cx_Freeze.Executable("cypherio.py", base=base), cx_Freeze.Executa
 
 cx_Freeze.setup(
     name="Cypherio",
-    options={"build_exe": {"packages":["Cryptodome", "os", "sys", "subprocess", "PySimpleGUI"]}},
+    options={"build_exe": {"packages":["Cryptodome", "os", "sys", "subprocess", "PySimpleGUI"], "include_files": ["favicon.ico"]}},
     executables = executables)
