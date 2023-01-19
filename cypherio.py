@@ -132,7 +132,7 @@ def decrypt(filepath, key_name, path_out):
 
     data = crypto.decrypt_AES_RSA(key_str, enc_data)
 
-    file = open(decrypted_file_path, "w")
+    file = open(decrypted_file_path, "wb")
     file.write(data)
     file.close()
 

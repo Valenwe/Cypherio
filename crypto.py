@@ -71,11 +71,6 @@ def decrypt_AES_RSA(key_str, enc_data):
     cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
     data = cipher_aes.decrypt_and_verify(ciphertext, tag)
 
-    try:
-        return data.decode("utf-8")
-    except:
-        return data.decode("latin1")
-
 
 def generate_RSA_key(bits=2048):
     key_pair = RSA.generate(bits)
