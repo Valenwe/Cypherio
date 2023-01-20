@@ -1,9 +1,10 @@
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 import base64
+import logging
 from Crypto.Random import get_random_bytes
 
-# pip install pycryptodomex
+# pip install pycryptodome
 
 
 def base_to_str(byte):
@@ -64,12 +65,13 @@ def decrypt_AES_RSA(key_str, enc_data):
     try:
         session_key = key.decrypt(enc_session_key)
     except TypeError:
-        print("The RSA key is not a private key!")
-        return -1
+        logging.error("The RSA key is not a private key!")
+        return None
 
     # Decrypt the data with the AES session key
     cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
     data = cipher_aes.decrypt_and_verify(ciphertext, tag)
+    return data
 
 
 def generate_RSA_key(bits=2048):
@@ -110,15 +112,15 @@ def is_public(key_str):
     return result
 
 
-"""
-priv, pub = generate_RSA_key()
+# Testing purpose
+if __name__ == "__main__":
+    priv, pub = generate_RSA_key()
 
-file_out = open("file.txt", "wb")
-for x in encrypt_AES_RSA(priv, "test"):
-    file_out.write(x)
-file_out.close()
+    file_out = open("file.txt", "wb")
+    for x in encrypt_AES_RSA(priv, "test"):
+        file_out.write(x)
+    file_out.close()
 
-file_in = open("file.txt", "rb")
-dec = decrypt_AES_RSA(priv, file_in.read())
-file_in.close()
-"""
+    file_in = open("file.txt", "rb")
+    dec = decrypt_AES_RSA(priv, file_in.read())
+    file_in.close()

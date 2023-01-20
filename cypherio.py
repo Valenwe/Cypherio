@@ -1,16 +1,18 @@
 import PySimpleGUI as sg
 import subprocess
-
 import os
 import sys
+import logging
+
 import crypto
 
+# Characters after the name of the encrypted file.
+encrypted_suffix = "_encrypted"
 
 def generate_key(key_name, bits=2048):
     priv, _ = crypto.generate_RSA_key(bits)
-    f = open("output/keys/" + key_name + ".pem", "w")
-    f.write(priv)
-    f.close()
+    with open("output/keys/" + key_name + ".pem", "w") as f:
+        f.write(priv)
 
 
 def generate_public_key(key_name):
@@ -20,10 +22,9 @@ def generate_public_key(key_name):
     except:
         return None
 
-    f = open("output/keys/" + key_name.split("/")
-             [-1].replace(".pem", "") + "_public.pem", "w")
-    f.write(pub_str)
-    f.close()
+    with open("output/keys/" + key_name.split("/")
+             [-1].replace(".pem", "") + "_public.pem", "w") as f:
+        f.write(pub_str)
 
     return key_name
 
@@ -67,11 +68,11 @@ def check_key_validation(key_name, public=True):
         if not public:
             sg.popup(
                 "Error", "You have to select a private key to decrypt files!")
-            print("The RSA key is not a private key!")
+            logging.error("The RSA key is not a private key!")
         else:
             sg.popup(
                 "Error", "You have to select a public or private key to encrypt files!")
-            print("The RSA key is not a public or private key!")
+            logging.error("The RSA key is not a public or private key!")
 
     return response
 
@@ -84,26 +85,25 @@ def encrypt(filepath, key_name, path_out):
         data_file.close()
 
     except IOError:
-        print("Error reading the data file!")
+        logging.error("Error reading the data file!")
         return None
 
     try:
         key_str = open(key_name).read()
     except IOError:
-        print("Error reading the RSA key!")
+        logging.error("Error reading the RSA key!")
         return None
 
     basename = os.path.splitext(os.path.basename(filepath))
-    bin_file_name = basename[0] + "_encrypted" + basename[1]
+    bin_file_name = basename[0] + encrypted_suffix + basename[1]
     path_file_out = path_out + "/" + bin_file_name
 
     if not confirm_file_exists(path_file_out):
         return None
 
-    file_out = open(path_file_out, "wb")
-    [file_out.write(x)
-     for x in crypto.encrypt_AES_RSA(key_str, data)]
-    file_out.close()
+    with open(path_file_out, "wb") as file_out:
+        [file_out.write(x)
+        for x in crypto.encrypt_AES_RSA(key_str, data)]
 
     return bin_file_name
 
@@ -112,7 +112,7 @@ def decrypt(filepath, key_name, path_out):
     try:
         key_str = open(key_name).read()
     except IOError:
-        print("Error reading the RSA key!")
+        logging.error("Error reading the RSA key!")
         return None
 
     try:
@@ -120,11 +120,11 @@ def decrypt(filepath, key_name, path_out):
         enc_data = file.read()
         file.close()
     except IOError:
-        print("Error reading the binary file!")
+        logging.error("Error reading the binary file!")
         return None
 
     basename = os.path.splitext(os.path.basename(filepath))
-    bin_file_name = basename[0] + "_decrypted" + basename[1]
+    bin_file_name = basename[0].split(encrypted_suffix)[0] + basename[1]
     decrypted_file_path = path_out + "/" + bin_file_name
 
     if not confirm_file_exists(decrypted_file_path):
@@ -132,9 +132,12 @@ def decrypt(filepath, key_name, path_out):
 
     data = crypto.decrypt_AES_RSA(key_str, enc_data)
 
-    file = open(decrypted_file_path, "wb")
-    file.write(data)
-    file.close()
+    if data == None:
+        logging.error("Failed to decrypt file.")
+        return None
+
+    with open(decrypted_file_path, "wb") as file:
+        file.write(data)
 
     return bin_file_name
 
@@ -237,7 +240,7 @@ def guide_window():
     ]
 
     window = sg.Window("Guide", layout, icon="favicon.ico")
-    event, values = window.read()
+    window.read()
     window.close()
 
 
@@ -326,20 +329,16 @@ while True:
             sg.popup("You have to select a public or private key!")
         else:
             if check_key_validation(values["_KEY_"]):
-                results = []
-                for element in target_files:
-                    if encrypt(element, values["_KEY_"], "output/encrypted") == None:
-                        results.append("failed")
-                    else:
-                        results.append("success")
-
+                results = {}
                 popup = ""
-                for i in range(0, len(results)):
-                    file_ext = os.path.splitext(
-                        os.path.basename(target_files[i]))
-                    popup += file_ext[0] + \
-                        " => " + file_ext[0] + "_encrypted" + file_ext[1] + \
-                        " ~~ " + results[i] + "\n"
+                for element in target_files:
+                    encrypted_filename = encrypt(element, values["_KEY_"], "output/encrypted")
+                    results[encrypted_filename] = "failed" if encrypted_filename == None else "success"
+
+                    popup += os.path.basename(element) + \
+                        " => " + encrypted_filename + \
+                        " ~~ " + results[encrypted_filename] + "\n"
+
                 result_window("Encryption", "File encryption report",
                               popup, os.getcwd() + "\output\encrypted")
                 target_files = []
@@ -353,20 +352,15 @@ while True:
         else:
 
             if check_key_validation(values["_KEY_"], public=False):
-                results = []
-                for element in target_files:
-                    if decrypt(element, values["_KEY_"], "output/decrypted") == None:
-                        results.append("failed")
-                    else:
-                        results.append("success")
-
+                results = {}
                 popup = ""
-                for i in range(0, len(results)):
-                    file_ext = os.path.splitext(
-                        os.path.basename(target_files[i]))
-                    popup += file_ext[0] + \
-                        " => " + file_ext[0] + "_decrypted" + file_ext[1] + \
-                        " ~~ " + results[i] + "\n"
+                for element in target_files:
+                    decrypted_filename = decrypt(element, values["_KEY_"], "output/decrypted")
+                    results[decrypted_filename] = "failed" if decrypted_filename == None else "success"
+
+                    popup += os.path.basename(element) + \
+                        " => " + decrypted_filename + \
+                        " ~~ " + results[decrypted_filename] + "\n"
 
                 result_window("Decryption", "File decryption report",
                               popup, os.getcwd() + "\output\decrypted")
